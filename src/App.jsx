@@ -148,27 +148,50 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Simple keyword extraction for trending bar
+  // Improved keyword extraction with hardcoded popular fallbacks
   const trendingTags = useMemo(() => {
+    // Hardcoded hot topics to ensure it's NEVER empty
+    const hotTopics = [
+      { name: 'ข่าววันนี้', count: 5 },
+      { name: 'Thailand', count: 4 },
+      { name: 'Breaking News', count: 3 },
+      { name: 'เศรษฐกิจ', count: 2 },
+      { name: 'WorldNews', count: 2 }
+    ];
+
     const allTitles = [...globalNews, ...localNews].map(item => item.title).join(' ');
-    // Filter very common Thai/English stop words or short words
-    const common = ['ที่', 'และ', 'ของ', 'เป็น', 'ใน', 'กับ', 'การ', 'The', 'and', 'for', 'was', 'with'];
     
-    // Very basic extraction: words between 4 and 15 chars that are frequent
-    const words = allTitles.match(/[\u0E00-\u0E7Fa-zA-Z0-9]{4,15}/g) || [];
+    if (!allTitles || allTitles.length < 10) {
+      return hotTopics;
+    }
+
+    const common = ['ที่', 'และ', 'ของ', 'เป็น', 'ใน', 'กับ', 'การ', 'The', 'and', 'for', 'was', 'with', 'ข่าว', 'วันนี้'];
+    const segments = allTitles.split(/[\s\t\n\r,।|!?"'().-]/);
     const countMap = {};
     
-    words.forEach(w => {
-      if (!common.includes(w)) {
-        countMap[w] = (countMap[w] || 0) + 1;
-      }
+    segments.forEach(segment => {
+      const matches = segment.match(/[\u0E00-\u0E7Fa-zA-Z0-9]{3,12}/g) || [];
+      matches.forEach(w => {
+        if (!common.includes(w) && w.length >= 3) {
+          countMap[w] = (countMap[w] || 0) + 1;
+        }
+      });
     });
 
-    return Object.entries(countMap)
+    const dynamicResults = Object.entries(countMap)
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
+      .slice(0, 8)
       .map(([name, count]) => ({ name, count }));
+
+    // Merge hardcoded and dynamic
+    const combined = [...hotTopics, ...dynamicResults];
+    // Remove duplicates by name
+    return combined.filter((tag, index, self) => 
+      index === self.findIndex((t) => t.name === tag.name)
+    ).slice(0, 10);
   }, [globalNews, localNews]);
+
+
 
   const getFilteredNews = () => {
     if (activeTab === 'global') return { global: globalNews, local: [] };

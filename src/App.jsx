@@ -24,22 +24,37 @@ function getRandomFallback(index) {
   return FALLBACK_IMAGES[index % FALLBACK_IMAGES.length];
 }
 
-function TrendingBar({ tags }) {
-  if (!tags || tags.length === 0) return null;
+const TRENDS_URL = 'https://trends.google.com/trends/trendingsearches/daily/rss?geo=TH';
 
-  // Duplicate tags for seamless infinite marquee
-  const displayTags = [...tags, ...tags];
+function TrendingBar({ tags, loading }) {
+  if (loading && (!tags || tags.length === 0)) {
+    return (
+      <div className="trending-container glass">
+        <div className="trending-label">
+          <TrendingUp size={16} /> <span>Trending:</span>
+        </div>
+        <div className="trending-list">
+          {[1,2,3,4,5].map(i => (
+            <div key={i} className="trending-item">อัปเดตคำค้นหายอดฮิต...</div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const displayTags = [...tags, ...tags]; // Loop for marquee
 
   return (
     <div className="trending-container glass">
       <div className="trending-label">
-        <TrendingUp size={16} /> <span>Trending:</span>
+        <TrendingUp size={16} /> <span>Trends:</span>
       </div>
       <div className="trending-list">
         {displayTags.map((tag, idx) => (
           <div key={idx} className="trending-item">
             <Hash size={14} className="text-primary" />
             <b>{tag.name}</b>
+            {tag.traffic && <small style={{opacity: 0.6, fontSize: '0.7rem'}}>({tag.traffic})</small>}
           </div>
         ))}
       </div>
@@ -98,6 +113,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('all'); // all, global, local
   const [globalNews, setGlobalNews] = useState([]);
   const [localNews, setLocalNews] = useState([]);
+  const [trends, setTrends] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -113,7 +129,6 @@ function App() {
       });
       const results = await Promise.all(promises);
       const combined = results.flat();
-      // Sort by pubDate descending
       combined.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
       return combined;
     } catch (err) {
@@ -122,16 +137,36 @@ function App() {
     }
   };
 
+  const fetchTrends = async () => {
+    try {
+      const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(TRENDS_URL)}`);
+      const data = await res.json();
+      if (data.status === 'ok') {
+        const items = data.items.map(item => {
+          // Google Trends RSS titles look like "Keyword"
+          // Description often has traffic like "50,000+ searches"
+          const trafficMatch = item.description ? item.description.match(/([0-9,]+\+ searches)/) : null;
+          return {
+            name: item.title,
+            traffic: trafficMatch ? trafficMatch[1] : ''
+          };
+        });
+        setTrends(items);
+      }
+    } catch (err) {
+      console.error("Failed to fetch trends:", err);
+    }
+  };
+
   const fetchNews = async () => {
     setLoading(true);
     setError(null);
     try {
-      const [gData, lData] = await Promise.all([
-        fetchGroup(GLOBAL_SOURCES),
-        fetchGroup(LOCAL_SOURCES)
+      await Promise.all([
+        fetchGroup(GLOBAL_SOURCES).then(setGlobalNews),
+        fetchGroup(LOCAL_SOURCES).then(setLocalNews),
+        fetchTrends()
       ]);
-      setGlobalNews(gData);
-      setLocalNews(lData);
     } catch (err) {
       console.error("Failed to fetch news:", err);
       setError("ไม่สามารถโหลดข่าวสารได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง");
@@ -142,56 +177,9 @@ function App() {
 
   useEffect(() => {
     fetchNews();
-    
-    // Refresh every 5 minutes
-    const interval = setInterval(fetchNews, 5 * 60 * 1000);
+    const interval = setInterval(fetchNews, 10 * 60 * 1000); // 10 mins
     return () => clearInterval(interval);
   }, []);
-
-  // Improved keyword extraction with hardcoded popular fallbacks
-  const trendingTags = useMemo(() => {
-    // Hardcoded hot topics to ensure it's NEVER empty
-    const hotTopics = [
-      { name: 'ข่าววันนี้', count: 5 },
-      { name: 'Thailand', count: 4 },
-      { name: 'Breaking News', count: 3 },
-      { name: 'เศรษฐกิจ', count: 2 },
-      { name: 'WorldNews', count: 2 }
-    ];
-
-    const allTitles = [...globalNews, ...localNews].map(item => item.title).join(' ');
-    
-    if (!allTitles || allTitles.length < 10) {
-      return hotTopics;
-    }
-
-    const common = ['ที่', 'และ', 'ของ', 'เป็น', 'ใน', 'กับ', 'การ', 'The', 'and', 'for', 'was', 'with', 'ข่าว', 'วันนี้'];
-    const segments = allTitles.split(/[\s\t\n\r,।|!?"'().-]/);
-    const countMap = {};
-    
-    segments.forEach(segment => {
-      const matches = segment.match(/[\u0E00-\u0E7Fa-zA-Z0-9]{3,12}/g) || [];
-      matches.forEach(w => {
-        if (!common.includes(w) && w.length >= 3) {
-          countMap[w] = (countMap[w] || 0) + 1;
-        }
-      });
-    });
-
-    const dynamicResults = Object.entries(countMap)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8)
-      .map(([name, count]) => ({ name, count }));
-
-    // Merge hardcoded and dynamic
-    const combined = [...hotTopics, ...dynamicResults];
-    // Remove duplicates by name
-    return combined.filter((tag, index, self) => 
-      index === self.findIndex((t) => t.name === tag.name)
-    ).slice(0, 10);
-  }, [globalNews, localNews]);
-
-
 
   const getFilteredNews = () => {
     if (activeTab === 'global') return { global: globalNews, local: [] };
@@ -201,7 +189,6 @@ function App() {
 
   const { global: displayGlobal, local: displayLocal } = getFilteredNews();
 
-  // Combine for 'all' view, prioritizing interleaved items
   let displayAll = [];
   if (activeTab === 'all') {
     const maxLength = Math.max(displayGlobal.length, displayLocal.length);
@@ -243,7 +230,7 @@ function App() {
         </nav>
       </header>
 
-      <TrendingBar tags={trendingTags} />
+      <TrendingBar tags={trends} loading={loading} />
 
       <main className="main-content">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
@@ -277,7 +264,7 @@ function App() {
         {loading && activeTab === 'all' && displayAll.length === 0 ? (
           <div className="loading-container">
             <div className="spinner"></div>
-            <p>กำลังโหลดข่าวสารล่าสุด...</p>
+            <p>กำลังดึงข้อมูลล่าสุดจาก Google Trends...</p>
           </div>
         ) : (
           <div className="news-grid">
@@ -300,4 +287,5 @@ function App() {
 }
 
 export default App;
+
 

@@ -332,3 +332,60 @@ p {
     font-size: 2rem;
   }
 }
+
+/* Trending Section */
+.trending-container {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 2rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.trending-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  color: var(--accent);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.trending-list {
+  display: flex;
+  gap: 1.5rem;
+  animation: scrollTrending 40s linear infinite;
+}
+
+.trending-item {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: color 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.trending-item:hover {
+  color: var(--primary);
+}
+
+.trending-item b {
+  color: var(--text-main);
+}
+
+@keyframes scrollTrending {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.trending-container:hover .trending-list {
+  animation-play-state: paused;
+}
+

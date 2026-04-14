@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Globe2, MapPin, Clock, ArrowRight, ExternalLink, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Globe2, MapPin, Clock, ArrowRight, ExternalLink, RefreshCw, TrendingUp, Hash } from 'lucide-react';
 import './index.css';
 
 const LOCAL_SOURCES = [
@@ -22,6 +22,29 @@ const FALLBACK_IMAGES = [
 
 function getRandomFallback(index) {
   return FALLBACK_IMAGES[index % FALLBACK_IMAGES.length];
+}
+
+function TrendingBar({ tags }) {
+  if (!tags || tags.length === 0) return null;
+
+  // Duplicate tags for seamless infinite marquee
+  const displayTags = [...tags, ...tags];
+
+  return (
+    <div className="trending-container glass">
+      <div className="trending-label">
+        <TrendingUp size={16} /> <span>Trending:</span>
+      </div>
+      <div className="trending-list">
+        {displayTags.map((tag, idx) => (
+          <div key={idx} className="trending-item">
+            <Hash size={14} className="text-primary" />
+            <b>{tag.name}</b>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function NewsCard({ item, type, index }) {
@@ -125,6 +148,28 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // Simple keyword extraction for trending bar
+  const trendingTags = useMemo(() => {
+    const allTitles = [...globalNews, ...localNews].map(item => item.title).join(' ');
+    // Filter very common Thai/English stop words or short words
+    const common = ['ที่', 'และ', 'ของ', 'เป็น', 'ใน', 'กับ', 'การ', 'The', 'and', 'for', 'was', 'with'];
+    
+    // Very basic extraction: words between 4 and 15 chars that are frequent
+    const words = allTitles.match(/[\u0E00-\u0E7Fa-zA-Z0-9]{4,15}/g) || [];
+    const countMap = {};
+    
+    words.forEach(w => {
+      if (!common.includes(w)) {
+        countMap[w] = (countMap[w] || 0) + 1;
+      }
+    });
+
+    return Object.entries(countMap)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([name, count]) => ({ name, count }));
+  }, [globalNews, localNews]);
+
   const getFilteredNews = () => {
     if (activeTab === 'global') return { global: globalNews, local: [] };
     if (activeTab === 'local') return { global: [], local: localNews };
@@ -174,6 +219,8 @@ function App() {
           </button>
         </nav>
       </header>
+
+      <TrendingBar tags={trendingTags} />
 
       <main className="main-content">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
@@ -230,3 +277,4 @@ function App() {
 }
 
 export default App;
+

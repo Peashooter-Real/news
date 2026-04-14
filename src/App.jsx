@@ -24,44 +24,6 @@ function getRandomFallback(index) {
   return FALLBACK_IMAGES[index % FALLBACK_IMAGES.length];
 }
 
-const TRENDS_URL = 'https://trends.google.com/trends/trendingsearches/daily/rss?geo=TH';
-
-function TrendingBar({ tags, loading }) {
-  if (loading && (!tags || tags.length === 0)) {
-    return (
-      <div className="trending-container glass">
-        <div className="trending-label">
-          <TrendingUp size={16} /> <span>Trending:</span>
-        </div>
-        <div className="trending-list">
-          {[1,2,3,4,5].map(i => (
-            <div key={i} className="trending-item">อัปเดตคำค้นหายอดฮิต...</div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  const displayTags = [...tags, ...tags]; // Loop for marquee
-
-  return (
-    <div className="trending-container glass">
-      <div className="trending-label">
-        <TrendingUp size={16} /> <span>Trends:</span>
-      </div>
-      <div className="trending-list">
-        {displayTags.map((tag, idx) => (
-          <div key={idx} className="trending-item">
-            <Hash size={14} className="text-primary" />
-            <b>{tag.name}</b>
-            {tag.traffic && <small style={{opacity: 0.6, fontSize: '0.7rem'}}>({tag.traffic})</small>}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function NewsCard({ item, type, index }) {
   const isGlobal = type === 'global';
   
@@ -113,7 +75,6 @@ function App() {
   const [activeTab, setActiveTab] = useState('all'); // all, global, local
   const [globalNews, setGlobalNews] = useState([]);
   const [localNews, setLocalNews] = useState([]);
-  const [trends, setTrends] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -137,36 +98,17 @@ function App() {
     }
   };
 
-  const fetchTrends = async () => {
-    try {
-      const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(TRENDS_URL)}`);
-      const data = await res.json();
-      if (data.status === 'ok') {
-        const items = data.items.map(item => {
-          // Google Trends RSS titles look like "Keyword"
-          // Description often has traffic like "50,000+ searches"
-          const trafficMatch = item.description ? item.description.match(/([0-9,]+\+ searches)/) : null;
-          return {
-            name: item.title,
-            traffic: trafficMatch ? trafficMatch[1] : ''
-          };
-        });
-        setTrends(items);
-      }
-    } catch (err) {
-      console.error("Failed to fetch trends:", err);
-    }
-  };
-
   const fetchNews = async () => {
     setLoading(true);
     setError(null);
     try {
-      await Promise.all([
-        fetchGroup(GLOBAL_SOURCES).then(setGlobalNews),
-        fetchGroup(LOCAL_SOURCES).then(setLocalNews),
-        fetchTrends()
+      const [gData, lData] = await Promise.all([
+        fetchGroup(GLOBAL_SOURCES),
+        fetchGroup(LOCAL_SOURCES)
       ]);
+      
+      setGlobalNews(gData);
+      setLocalNews(lData);
     } catch (err) {
       console.error("Failed to fetch news:", err);
       setError("ไม่สามารถโหลดข่าวสารได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง");
@@ -177,7 +119,7 @@ function App() {
 
   useEffect(() => {
     fetchNews();
-    const interval = setInterval(fetchNews, 10 * 60 * 1000); // 10 mins
+    const interval = setInterval(fetchNews, 5 * 60 * 1000); 
     return () => clearInterval(interval);
   }, []);
 
@@ -230,8 +172,6 @@ function App() {
         </nav>
       </header>
 
-      <TrendingBar tags={trends} loading={loading} />
-
       <main className="main-content">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
           <h1 className="page-title">
@@ -264,7 +204,7 @@ function App() {
         {loading && activeTab === 'all' && displayAll.length === 0 ? (
           <div className="loading-container">
             <div className="spinner"></div>
-            <p>กำลังดึงข้อมูลล่าสุดจาก Google Trends...</p>
+            <p>กำลังโหลดข่าวสารล่าสุด...</p>
           </div>
         ) : (
           <div className="news-grid">
@@ -287,5 +227,3 @@ function App() {
 }
 
 export default App;
-
-

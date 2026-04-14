@@ -3,15 +3,18 @@ import { Globe2, MapPin, Clock, ArrowRight, ExternalLink, RefreshCw, TrendingUp,
 import './index.css';
 
 const LOCAL_SOURCES = [
-  { name: 'Thairath', url: 'https://www.thairath.co.th/rss/news' },
+  { name: 'ไทยรัฐ', url: 'https://www.thairath.co.th/rss/news' },
+  { name: 'มติชน', url: 'https://www.matichon.co.th/feed' },
+  { name: 'ข่าวสด', url: 'https://www.khaosod.co.th/feed' },
   { name: 'Google News TH', url: 'https://news.google.com/rss?hl=th&gl=TH&ceid=TH:th' }
 ];
 
 const GLOBAL_SOURCES = [
   { name: 'BBC News', url: 'http://feeds.bbci.co.uk/news/world/rss.xml' },
-  { name: 'CNN', url: 'http://rss.cnn.com/rss/edition.rss' },
-  { name: 'NYT World', url: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml' }
+  { name: 'CNN', url: 'http://rss.cnn.com/rss/edition.rss' }
 ];
+
+
 
 // Fallback images in case the news item doesn't have one
 const FALLBACK_IMAGES = [
@@ -24,10 +27,30 @@ function getRandomFallback(index) {
   return FALLBACK_IMAGES[index % FALLBACK_IMAGES.length];
 }
 
+function formatRelativeTime(dateString) {
+  if (!dateString) return 'เมื่อครู่';
+  const now = new Date();
+  
+  // Clean date string and ensure it's treated as UTC if no offset exists
+  // rss2json usually returns "YYYY-MM-DD HH:mm:ss"
+  let cleanDateStr = dateString;
+  if (!cleanDateStr.includes('Z') && !cleanDateStr.includes('+') && !cleanDateStr.includes('GMT')) {
+    cleanDateStr += ' UTC';
+  }
+  
+  const date = new Date(cleanDateStr);
+  const diffInSeconds = Math.floor((now - date) / 1000);
+
+  if (diffInSeconds < 0) return 'เมื่อครู่'; // In case of clock drift
+  if (diffInSeconds < 60) return 'เมื่อครู่';
+  if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} นาทีที่แล้ว`;
+  if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} ชั่วโมงที่แล้ว`;
+  return `${Math.floor(diffInSeconds / 86400)} วันที่แล้ว`;
+}
+
+
 function NewsCard({ item, type, index }) {
   const isGlobal = type === 'global';
-  
-  // Try to parse image from standard RSS fields or enlosure/thumbnail
   let imageUrl = item.thumbnail || (item.enclosure && item.enclosure.link);
   
   if (!imageUrl && item.description) {
@@ -35,16 +58,10 @@ function NewsCard({ item, type, index }) {
     if (imgMatch) imageUrl = imgMatch[1];
   }
   
-  if (!imageUrl) {
-    imageUrl = getRandomFallback(index);
-  }
+  if (!imageUrl) imageUrl = getRandomFallback(index);
 
-  // Clean description from HTML tags
   const cleanDesc = item.description ? item.description.replace(/<[^>]+>/g, '').trim() : '';
-  
-  const formattedDate = item.pubDate ? new Date(item.pubDate).toLocaleString('th-TH', {
-    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
-  }) : 'Just now';
+  const timeLabel = formatRelativeTime(item.pubDate);
 
   return (
     <a href={item.link} target="_blank" rel="noopener noreferrer" className={`news-card animate-fade-in ${index === 0 ? 'featured-card' : ''}`} style={{animationDelay: `${index * 0.1}s`}}>
@@ -56,12 +73,12 @@ function NewsCard({ item, type, index }) {
       </div>
       <div className="card-content">
         <div className="card-meta">
-          <span><Clock size={14} /> {formattedDate}</span>
+          <span><Clock size={14} /> {timeLabel}</span>
+          <span className="source-tag">{item.sourceName}</span>
         </div>
         <h3 className="card-title">{item.title}</h3>
         <p className="card-desc">{cleanDesc}</p>
         <div className="card-actions">
-          <span className="source">{item.sourceName || (isGlobal ? 'World News' : 'ข่าวในประเทศไทย')}</span>
           <span className="read-more">
             อ่านต่อ <ArrowRight size={16} />
           </span>
@@ -72,22 +89,27 @@ function NewsCard({ item, type, index }) {
 }
 
 function App() {
-  const [activeTab, setActiveTab] = useState('all'); // all, global, local
+  const [activeTab, setActiveTab] = useState('all'); 
   const [globalNews, setGlobalNews] = useState([]);
   const [localNews, setLocalNews] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [lastSync, setLastSync] = useState(new Date());
   const [error, setError] = useState(null);
 
   const fetchGroup = async (sources) => {
     try {
       const promises = sources.map(async (source) => {
-        const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(source.url)}&api_key=`);
+        const cacheBuster = `&_=${Date.now()}`;
+        // Simple fetch to ensure compatibility with free tier
+        const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(source.url)}${cacheBuster}`);
         const data = await res.json();
         if (data.status === 'ok') {
           return data.items.map(item => ({ ...item, sourceName: source.name }));
         }
         return [];
       });
+
+
       const results = await Promise.all(promises);
       const combined = results.flat();
       combined.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
@@ -109,6 +131,7 @@ function App() {
       
       setGlobalNews(gData);
       setLocalNews(lData);
+      setLastSync(new Date());
     } catch (err) {
       console.error("Failed to fetch news:", err);
       setError("ไม่สามารถโหลดข่าวสารได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง");
@@ -123,13 +146,9 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  const getFilteredNews = () => {
-    if (activeTab === 'global') return { global: globalNews, local: [] };
-    if (activeTab === 'local') return { global: [], local: localNews };
-    return { global: globalNews, local: localNews };
-  };
-
-  const { global: displayGlobal, local: displayLocal } = getFilteredNews();
+  const { global: displayGlobal, local: displayLocal } =  activeTab === 'global' ? { global: globalNews, local: [] } : 
+                                                          activeTab === 'local' ? { global: [], local: localNews } : 
+                                                          { global: globalNews, local: localNews };
 
   let displayAll = [];
   if (activeTab === 'all') {
@@ -148,76 +167,55 @@ function App() {
           NewsSphere TH
         </div>
         <nav className="header-nav">
-          <button 
-            className={`nav-link ${activeTab === 'all' ? 'active' : ''}`}
-            onClick={() => setActiveTab('all')}
-            style={{background:'none', borderTop:'none', borderLeft:'none', borderRight:'none', fontSize:'1rem'}}
-          >
-            หน้าแรก
-          </button>
-          <button 
-            className={`nav-link ${activeTab === 'global' ? 'active' : ''}`}
-            onClick={() => setActiveTab('global')}
-            style={{background:'none', borderTop:'none', borderLeft:'none', borderRight:'none', fontSize:'1rem'}}
-          >
-            ระดับโลก
-          </button>
-          <button 
-            className={`nav-link ${activeTab === 'local' ? 'active' : ''}`}
-            onClick={() => setActiveTab('local')}
-            style={{background:'none', borderTop:'none', borderLeft:'none', borderRight:'none', fontSize:'1rem'}}
-          >
-            ในประเทศไทย
-          </button>
+          <button className={`nav-link ${activeTab === 'all' ? 'active' : ''}`} onClick={() => setActiveTab('all')}>หน้าแรก</button>
+          <button className={`nav-link ${activeTab === 'global' ? 'active' : ''}`} onClick={() => setActiveTab('global')}>ระดับโลก</button>
+          <button className={`nav-link ${activeTab === 'local' ? 'active' : ''}`} onClick={() => setActiveTab('local')}>ในประเทศไทย</button>
         </nav>
       </header>
 
       <main className="main-content">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-          <h1 className="page-title">
-            {activeTab === 'all' && <><Globe2 className="text-primary" /> ข่าวเด่นวันนี้</>}
-            {activeTab === 'global' && <><Globe2 className="text-primary" /> ข่าวระดับโลก</>}
-            {activeTab === 'local' && <><MapPin className="text-primary" /> ข่าวในประเทศไทย</>}
-          </h1>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '2.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+          <div>
+            <h1 className="page-title" style={{marginBottom: '0.5rem'}}>
+              {activeTab === 'all' && <><Globe2 className="text-primary" /> ข่าวเด่นวันนี้</>}
+              {activeTab === 'global' && <><Globe2 className="text-primary" /> ข่าวระดับโลก</>}
+              {activeTab === 'local' && <><MapPin className="text-primary" /> ข่าวในประเทศไทย</>}
+            </h1>
+            <p style={{color: 'var(--text-muted)', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+              <Clock size={14} /> อัปเดตล่าสุดเมื่อ: {lastSync.toLocaleTimeString('th-TH')} น.
+            </p>
+          </div>
           <button 
             onClick={fetchNews} 
             disabled={loading}
             style={{ 
               display: 'flex', alignItems: 'center', gap: '0.5rem', 
-              background: 'rgba(255,255,255,0.1)', color: 'white', 
-              border: 'none', padding: '0.5rem 1rem', borderRadius: '8px',
-              cursor: 'pointer', transition: 'background 0.2s',
-              opacity: loading ? 0.5 : 1
+              background: 'var(--primary)', color: 'white', 
+              border: 'none', padding: '0.75rem 1.25rem', borderRadius: '12px',
+              cursor: 'pointer', transition: 'all 0.2s',
+              fontWeight: '600',
+              opacity: loading ? 0.7 : 1,
+              boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
             }}
+            onMouseOver={(e) => e.target.style.background = 'var(--primary-hover)'}
+            onMouseOut={(e) => e.target.style.background = 'var(--primary)'}
           >
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} style={loading ? {animation: 'spin 1s linear infinite'} : {}} /> 
-            อัปเดตล่าสุด
+            <RefreshCw size={18} className={loading ? 'animate-spin' : ''} style={loading ? {animation: 'spin 1s linear infinite'} : {}} /> 
+            {loading ? 'กำลังดึงข้อมูล...' : 'อัปเดตข่าว'}
           </button>
         </div>
 
-        {error && (
-          <div style={{ padding: '1rem', background: 'rgba(239, 68, 68, 0.2)', borderLeft: '4px solid #ef4444', marginBottom: '2rem', borderRadius: '4px' }}>
-            {error}
-          </div>
-        )}
+        {error && <div className="error-box">{error}</div>}
 
-        {loading && activeTab === 'all' && displayAll.length === 0 ? (
+        {loading && displayAll.length === 0 ? (
           <div className="loading-container">
             <div className="spinner"></div>
-            <p>กำลังโหลดข่าวสารล่าสุด...</p>
+            <p>กำลังโหลดข่าวสารล่าสุดจากทั่วโลก...</p>
           </div>
         ) : (
           <div className="news-grid">
-            {activeTab === 'all' && displayAll.map((item, idx) => (
-              <NewsCard key={item.guid || idx} item={item} type={item.type} index={idx} />
-            ))}
-            
-            {activeTab === 'global' && displayGlobal.map((item, idx) => (
-              <NewsCard key={item.guid || idx} item={item} type="global" index={idx} />
-            ))}
-            
-            {activeTab === 'local' && displayLocal.map((item, idx) => (
-              <NewsCard key={item.guid || idx} item={item} type="local" index={idx} />
+            {(activeTab === 'all' ? displayAll : activeTab === 'global' ? displayGlobal : displayLocal).map((item, idx) => (
+              <NewsCard key={item.guid || idx} item={item} type={item.type || activeTab} index={idx} />
             ))}
           </div>
         )}
